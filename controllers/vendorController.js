@@ -4,6 +4,8 @@ const Review = require('../models/Review');
 const User = require('../models/User');
 const sendEmail = require('../utils/sendEmail');
 const emailTemplate = require('../utils/emailTemplate');
+const FRONTEND_URL = 'https://e-commerce-fe-k4mw.vercel.app';
+
 
 exports.getVendors = async (req, res) => {
   try {
