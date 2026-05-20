@@ -3,7 +3,7 @@ const Product = require('../models/Product');
 const Dispute = require('../models/Dispute');
 const Vendor = require('../models/Vendor');
 const sendEmail = require('../utils/sendEmail');
-const FRONTEND_URL = 'https://e-commerce-fe-5wn3-fb73q8eep-idris-projects-c90196bf.vercel.app/';
+const FRONTEND_URL = 'https://e-commerce-fe-k4mw.vercel.app';
 
 
 exports.createOrder = async (req, res) => {

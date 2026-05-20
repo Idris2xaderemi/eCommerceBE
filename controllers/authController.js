@@ -5,8 +5,7 @@ const jwt = require('jsonwebtoken');
 const sendEmail = require('../utils/sendEmail');
 const emailTemplate = require('../utils/emailTemplate');
 
-const FRONTEND_URL = 'https://e-commerce-fe-5wn3-fb73q8eep-idris-projects-c90196bf.vercel.app/';
-
+const FRONTEND_URL = 'https://e-commerce-fe-k4mw.vercel.app';
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });
 };
