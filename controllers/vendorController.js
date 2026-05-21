@@ -95,7 +95,7 @@ exports.createVendorReview = async (req, res) => {
            <p><strong>Comment:</strong> ${comment}</p>
            <p>Keep up the great work!</p>`,
           'View Your Profile',
-          `http://${FRONTEND_URL}/vendor/${vendor._id}`
+          `${FRONTEND_URL}/vendor/${vendor._id}`
         ),
       }).catch(err => console.error('Email error:', err.message));
     }
