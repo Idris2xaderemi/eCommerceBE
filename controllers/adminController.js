@@ -143,3 +143,38 @@ exports.resolveDispute = async (req, res) => {
   );
   res.status(200).json({ success: true, dispute });
 };
+
+exports.approveReview = async (req, res) => {
+  try {
+    const review = await Review.findByIdAndUpdate(req.params.id, { status: 'approved' }, { new: true });
+    // Recalculate vendor rating if applicable
+    if (review.vendor) {
+      const reviews = await Review.find({ vendor: review.vendor, status: 'approved' });
+      const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+      await Vendor.findByIdAndUpdate(review.vendor, {
+        rating: Math.round(avg * 10) / 10,
+        numReviews: reviews.length,
+      });
+    }
+    if (review.product) {
+      const reviews = await Review.find({ product: review.product, status: 'approved' });
+      const avg = reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length;
+      await Product.findByIdAndUpdate(review.product, {
+        rating: Math.round(avg * 10) / 10,
+        numReviews: reviews.length,
+      });
+    }
+    res.status(200).json({ success: true, review });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+exports.rejectReview = async (req, res) => {
+  try {
+    await Review.findByIdAndUpdate(req.params.id, { status: 'rejected' });
+    res.status(200).json({ success: true, message: 'Review rejected' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};

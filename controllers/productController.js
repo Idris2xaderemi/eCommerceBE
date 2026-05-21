@@ -133,3 +133,20 @@ exports.deleteProduct = async (req, res) => {
     res.status(400).json({ success: false, message: error.message });
   }
 };
+
+
+exports.getProductSuggestions = async (req, res) => {
+  try {
+    const { q } = req.query;
+    if (!q || q.length < 2) return res.json({ success: true, suggestions: [] });
+
+    const suggestions = await Product.find(
+      { name: { $regex: q, $options: 'i' }, isApproved: true, isActive: true },
+      { name: 1 }
+    ).limit(5);
+
+    res.status(200).json({ success: true, suggestions: suggestions.map(p => p.name) });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};

@@ -6,6 +6,7 @@ const sendEmail = require('../utils/sendEmail');
 const emailTemplate = require('../utils/emailTemplate');
 
 const FRONTEND_URL = 'https://e-commerce-fe-k4mw.vercel.app';
+
 const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, { expiresIn: process.env.JWT_EXPIRE });
 };
@@ -24,6 +25,7 @@ exports.register = async (req, res) => {
 
     let vendorId = null;
 
+    // ---------- VENDOR BRANCH ----------
     if (role === 'vendor') {
       const vendor = await Vendor.create({
         user: user._id,
@@ -42,7 +44,7 @@ exports.register = async (req, res) => {
       });
       vendorId = vendor._id;
 
-     
+      // Admin notification
       sendEmail({
         email: process.env.ADMIN_EMAIL,
         subject: 'New Vendor Registration',
@@ -57,7 +59,7 @@ exports.register = async (req, res) => {
         ),
       }).catch(err => console.error('Email error:', err.message));
 
-
+      // Vendor welcome email
       sendEmail({
         email: user.email,
         subject: 'Vendor Registration Received',
@@ -72,7 +74,7 @@ exports.register = async (req, res) => {
         ),
       }).catch(err => console.error('Email error:', err.message));
     } else {
-
+      // Customer welcome email
       sendEmail({
         email: user.email,
         subject: 'Welcome to KaraKata',
@@ -87,6 +89,27 @@ exports.register = async (req, res) => {
       }).catch(err => console.error('Email error:', err.message));
     }
 
+    // ---------- EMAIL VERIFICATION ----------
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+    user.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+    await user.save({ validateBeforeSave: false });
+
+    const verificationUrl = `${FRONTEND_URL}/verify-email/${verificationToken}`;
+
+    sendEmail({
+      email: user.email,
+      subject: 'Verify your email address',
+      html: emailTemplate(
+        'Verify Your Email',
+        `<p>Hi ${user.firstName},</p>
+         <p>Please click the button below to verify your email address.</p>`,
+        'Verify Email',
+        verificationUrl
+      ),
+    }).catch(err => console.error('Verification email error:', err.message));
+    // ---------- END EMAIL VERIFICATION ----------
+
     const token = generateToken(user._id);
 
     res.status(201).json({
@@ -98,6 +121,7 @@ exports.register = async (req, res) => {
         lastName: user.lastName,
         email: user.email,
         role: user.role,
+        isEmailVerified: user.isEmailVerified,
       },
       vendorId: vendorId || undefined,
     });
@@ -106,7 +130,7 @@ exports.register = async (req, res) => {
   }
 };
 
-
+// POST /api/auth/login
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -117,6 +141,12 @@ exports.login = async (req, res) => {
     if (!user || !(await user.matchPassword(password))) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
+
+    // ---------- CHECK EMAIL VERIFICATION ----------
+if (!user || !(await user.matchPassword(password))) {
+  return res.status(401).json({ success: false, message: 'Invalid credentials' });
+}
+
     const token = generateToken(user._id);
     res.status(200).json({
       success: true,
@@ -134,7 +164,7 @@ exports.login = async (req, res) => {
   }
 };
 
-
+// POST /api/auth/guest
 exports.guestLogin = async (req, res) => {
   try {
     const guestUser = await User.create({
@@ -144,6 +174,7 @@ exports.guestLogin = async (req, res) => {
       password: 'guest123456',
       phone: '0000000000',
       isGuest: true,
+      isEmailVerified: true, // guest accounts are automatically verified
     });
     const token = generateToken(guestUser._id);
     res.status(200).json({
@@ -162,7 +193,7 @@ exports.guestLogin = async (req, res) => {
   }
 };
 
-
+// GET /api/auth/me
 exports.getMe = async (req, res) => {
   try {
     const user = await User.findById(req.user.id).lean();
@@ -176,15 +207,18 @@ exports.getMe = async (req, res) => {
   }
 };
 
-
-
+// POST /api/auth/forgot-password
 exports.forgotPassword = async (req, res) => {
   try {
     const user = await User.findOne({ email: req.body.email });
-    if (!user) {
-      return res.status(404).json({ success: false, message: 'Email not found' });
-    }
+if (!user || !(await user.matchPassword(password))) {
+  return res.status(401).json({ success: false, message: 'Invalid credentials' });
+}
 
+// 🔥 Only block if the field is explicitly false (not missing)
+if (user.isEmailVerified === false) {
+  return res.status(401).json({ success: false, message: 'Please verify your email before logging in' });
+}
     const resetToken = crypto.randomBytes(32).toString('hex');
     user.resetPasswordToken = crypto.createHash('sha256').update(resetToken).digest('hex');
     user.resetPasswordExpire = Date.now() + 30 * 60 * 1000;
@@ -210,7 +244,7 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
-
+// PUT /api/auth/reset-password/:token
 exports.resetPassword = async (req, res) => {
   try {
     const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
@@ -226,6 +260,67 @@ exports.resetPassword = async (req, res) => {
     user.resetPasswordExpire = undefined;
     await user.save();
     res.status(200).json({ success: true, message: 'Password updated' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+// ---------- EMAIL VERIFICATION ENDPOINTS ----------
+
+// GET /api/auth/verify-email/:token
+exports.verifyEmail = async (req, res) => {
+  try {
+    const hashedToken = crypto.createHash('sha256').update(req.params.token).digest('hex');
+    const user = await User.findOne({
+      emailVerificationToken: hashedToken,
+      emailVerificationExpire: { $gt: Date.now() },
+    });
+
+    if (!user) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired token' });
+    }
+
+    user.isEmailVerified = true;
+    user.emailVerificationToken = undefined;
+    user.emailVerificationExpire = undefined;
+    await user.save();
+
+    res.status(200).json({ success: true, message: 'Email verified successfully' });
+  } catch (error) {
+    res.status(400).json({ success: false, message: error.message });
+  }
+};
+
+// POST /api/auth/resend-verification
+exports.resendVerification = async (req, res) => {
+  try {
+    const user = await User.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'User not found' });
+    }
+    if (user.isEmailVerified) {
+      return res.status(400).json({ success: false, message: 'Email already verified' });
+    }
+
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.emailVerificationToken = crypto.createHash('sha256').update(verificationToken).digest('hex');
+    user.emailVerificationExpire = Date.now() + 24 * 60 * 60 * 1000;
+    await user.save({ validateBeforeSave: false });
+
+    const verificationUrl = `${FRONTEND_URL}/verify-email/${verificationToken}`;
+
+    sendEmail({
+      email: user.email,
+      subject: 'Verify your email address',
+      html: emailTemplate(
+        'Verify Your Email',
+        `<p>Click the button below to verify your email.</p>`,
+        'Verify Email',
+        verificationUrl
+      ),
+    }).catch(err => console.error('Resend verification error:', err.message));
+
+    res.status(200).json({ success: true, message: 'Verification email resent' });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }

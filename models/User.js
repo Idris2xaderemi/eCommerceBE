@@ -25,10 +25,14 @@ const userSchema = new mongoose.Schema({
   isGuest: { type: Boolean, default: false },
   resetPasswordToken: String,
   resetPasswordExpire: Date,
+  isEmailVerified: { type: Boolean, default: false },
+  emailVerificationToken: String,
+  emailVerificationExpire: Date,
   createdAt: { type: Date, default: Date.now },
+  wishlist: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }],
 });
 
-
+// Hash password before saving
 userSchema.pre('save', async function (next) {
   if (!this.isModified('password')) return next();
   try {
