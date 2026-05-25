@@ -2,20 +2,35 @@ const Product = require('../models/Product');
 const Vendor = require('../models/Vendor');
 const cloudinary = require('../utils/cloudinary');
 
+// POST /api/products – Vendor only
 exports.createProduct = async (req, res) => {
   try {
     const vendor = await Vendor.findOne({ user: req.user.id });
     if (!vendor || !vendor.isVerified) {
-      return res.status(403).json({ success: false, message: 'Vendor not verified or not found' });
+      return res.status(403).json({
+        success: false,
+        message: 'Vendor not verified or not found',
+      });
     }
 
-    const productData = {
-      ...req.body,
-      vendor: vendor._id,
-      isGeneric: false,
-      isApproved: false,  
+    // Clean numeric fields – convert empty strings to undefined
+    const { price, discountPrice, stock, ...rest } = req.body;
+
+    const cleanData = {
+      ...rest,
+      price: price === '' ? undefined : Number(price),
+      discountPrice: discountPrice === '' ? undefined : Number(discountPrice),
+      stock: stock === '' ? undefined : Number(stock),
     };
 
+    const productData = {
+      ...cleanData,
+      vendor: vendor._id,
+      isGeneric: false,
+      isApproved: false,   // admin must approve
+    };
+
+    // Handle image uploads (memoryStorage buffers)
     if (req.files && req.files.length > 0) {
       const images = [];
       for (const file of req.files) {
@@ -29,6 +44,7 @@ exports.createProduct = async (req, res) => {
 
     const product = await Product.create(productData);
 
+    // Update vendor's product count
     await Vendor.findByIdAndUpdate(vendor._id, { $inc: { totalProducts: 1 } });
 
     res.status(201).json({ success: true, product });
@@ -37,6 +53,7 @@ exports.createProduct = async (req, res) => {
   }
 };
 
+// GET /api/products – Public
 exports.getProducts = async (req, res) => {
   try {
     const { page = 1, limit = 12, category, minPrice, maxPrice, vendor, search, sort } = req.query;
@@ -50,11 +67,9 @@ exports.getProducts = async (req, res) => {
     }
     if (vendor) query.vendor = vendor;
 
+    // ----- UPDATED: search only by product name -----
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } },
-      ];
+      query.name = { $regex: search, $options: 'i' };
     }
 
     let sortOptions = {};
@@ -84,9 +99,11 @@ exports.getProducts = async (req, res) => {
   }
 };
 
+// GET /api/products/:id – Public
 exports.getProduct = async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id).populate('vendor', 'businessName rating numReviews businessDescription');
+    const product = await Product.findById(req.params.id)
+      .populate('vendor', 'businessName rating numReviews businessDescription');
     if (!product) {
       return res.status(404).json({ success: false, message: 'Product not found' });
     }
@@ -96,6 +113,7 @@ exports.getProduct = async (req, res) => {
   }
 };
 
+// PUT /api/products/:id – Vendor/Admin
 exports.updateProduct = async (req, res) => {
   try {
     let product = await Product.findById(req.params.id);
@@ -106,13 +124,17 @@ exports.updateProduct = async (req, res) => {
     if (product.vendor?.toString() !== vendor?._id?.toString() && req.user.role !== 'admin') {
       return res.status(403).json({ success: false, message: 'Not authorized' });
     }
-    product = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+    product = await Product.findByIdAndUpdate(req.params.id, req.body, {
+      new: true,
+      runValidators: true,
+    });
     res.status(200).json({ success: true, product });
   } catch (error) {
     res.status(400).json({ success: false, message: error.message });
   }
 };
 
+// DELETE /api/products/:id – Vendor/Admin
 exports.deleteProduct = async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -134,7 +156,7 @@ exports.deleteProduct = async (req, res) => {
   }
 };
 
-
+// GET /api/products/suggestions – Public (search as you type)
 exports.getProductSuggestions = async (req, res) => {
   try {
     const { q } = req.query;
